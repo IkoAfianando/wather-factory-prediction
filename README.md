@@ -50,8 +50,3 @@ cd research/weather-ai-profile
 - `30_pipelines/mongo_examples/` - MongoDB aggregation pipelines  
 - `50_implementation/source/weather_production_recommender.py` - Main algorithm
 - `scripts/setup_environment.sh` - Environment setup script
-
-## Contact
-Weather AI Project Lead - [contact information]
-
-Generated: $(date)

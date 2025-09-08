@@ -1,0 +1,79 @@
+# Weather AI Pipeline - Docker Image
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN groupadd -r weatherai && useradd -r -g weatherai -s /bin/bash weatherai
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY 30_pipelines/real_time_weather_pipeline.py ./pipeline.py
+COPY 20_logic/weather_correlation_engine.py ./correlation.py
+COPY config/ ./config/
+COPY models/ ./models/
+
+# Create necessary directories
+RUN mkdir -p /app/logs /app/data /app/temp && \
+    chown -R weatherai:weatherai /app
+
+# Install additional Python packages for weather processing
+RUN pip install --no-cache-dir \
+    aiohttp==3.9.0 \
+    asyncio-mqtt==0.16.1 \
+    python-dotenv==1.0.0 \
+    pydantic==2.5.0 \
+    structlog==23.2.0
+
+# Health check script
+COPY <<EOF /app/healthcheck.py
+#!/usr/bin/env python3
+import sys
+import asyncio
+import aiohttp
+
+async def health_check():
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get('http://localhost:8080/health', timeout=5) as response:
+                return response.status == 200
+    except:
+        return False
+
+if __name__ == "__main__":
+    result = asyncio.run(health_check())
+    sys.exit(0 if result else 1)
+EOF
+
+# Set permissions
+RUN chmod +x /app/healthcheck.py && \
+    chown weatherai:weatherai /app/healthcheck.py
+
+# Switch to non-root user
+USER weatherai
+
+# Environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV LOG_LEVEL=INFO
+
+# Expose health check port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python /app/healthcheck.py
+
+# Start command
+CMD ["python", "/app/pipeline.py"]
